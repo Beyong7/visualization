@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мои заказы в Яндекс Лавке</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; }
+
+    .app { display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* HEADER */
+    .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 20px 32px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+    .header-icon { font-size: 32px; }
+    .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+    .header p { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 2px; }
+    .header-right { margin-left: auto; text-align: right; font-size: 12px; color: rgba(255,255,255,0.5); }
+
+    /* KPI CARDS */
+    .kpi-section { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px 32px 16px; }
+    .kpi-card { background: white; border-radius: 16px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; }
+    .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); }
+    .kpi-label { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-value { font-size: 32px; font-weight: 800; color: #1a1a2e; line-height: 1; }
+    .kpi-unit { font-size: 14px; font-weight: 400; color: #9ca3af; margin-left: 4px; }
+    .kpi-trend { display: flex; align-items: center; gap: 6px; }
+    .kpi-trend-val { font-size: 12px; color: #6b7280; }
+    .kpi-trend-up { color: #10b981; font-size: 11px; font-weight: 700; }
+    .kpi-trend-down { color: #ef4444; font-size: 11px; font-weight: 700; }
+    .sparkline-container { height: 48px; }
+    .sparkline-container svg { width: 100%; height: 100%; }
+
+    /* MAIN LAYOUT */
+    .main { display: flex; gap: 16px; padding: 0 32px 32px; flex: 1; min-height: 0; }
+
+    /* SIDEBAR */
+    .sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
+    .panel { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .panel-title { font-size: 13px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }
+
+    .cat-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 10px; border: none; background: transparent; cursor: pointer; text-align: left; font-size: 13px; color: #374151; transition: all 0.15s; margin-bottom: 4px; }
+    .cat-btn:hover { background: #f3f4f6; }
+    .cat-btn.active { background: var(--cat-color, #6366f1); color: white; font-weight: 600; }
+    .cat-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot-color); flex-shrink: 0; }
+    .cat-btn.active .cat-dot { background: rgba(255,255,255,0.6); }
+    .cat-name { flex: 1; }
+    .cat-count { font-size: 11px; opacity: 0.7; }
+
+    /* CATEGORY STATS TABLE */
+    .cat-table { width: 100%; border-collapse: collapse; }
+    .cat-table th { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 8px 0; text-align: left; border-bottom: 1px solid #f3f4f6; }
+    .cat-table th:last-child { text-align: right; }
+    .cat-table td { padding: 8px 0; font-size: 12px; color: #374151; border-bottom: 1px solid #f9fafb; vertical-align: middle; }
+    .cat-table td:last-child { text-align: right; font-weight: 600; color: #1a1a2e; }
+    .cat-table tr:hover td { background: #f9fafb; cursor: pointer; }
+    .cat-table tr.active-row td { background: #eff6ff; color: #1d4ed8; }
+    .cat-dot-sm { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+    /* CONTENT AREA */
+    .content { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+    /* TABS */
+    .tabs { display: flex; gap: 8px; }
+    .tab-btn { padding: 8px 20px; border-radius: 10px; border: 2px solid #e5e7eb; background: white; cursor: pointer; font-size: 13px; font-weight: 600; color: #6b7280; transition: all 0.15s; }
+    .tab-btn.active { border-color: #6366f1; background: #6366f1; color: white; }
+    .tab-btn:hover:not(.active) { border-color: #a5b4fc; color: #4f46e5; }
+
+    /* ITEMS CHART */
+    .items-panel { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); flex: 1; }
+    .items-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .items-panel-title { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+    .items-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .item-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; cursor: pointer; transition: background 0.15s; position: relative; }
+    .item-row:hover { background: #f9fafb; }
+    .item-rank { font-size: 12px; font-weight: 700; color: #d1d5db; width: 20px; text-align: center; flex-shrink: 0; }
+    .item-img { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; background: #f3f4f6; flex-shrink: 0; border: 1px solid #f0f0f0; }
+    .item-img-placeholder { width: 44px; height: 44px; border-radius: 10px; background: #f3f4f6; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .item-info { flex: 1; min-width: 0; }
+    .item-name { font-size: 13px; font-weight: 500; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-cat { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+    .item-bar-wrap { width: 220px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+    .item-bar-bg { flex: 1; height: 8px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+    .item-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+    .item-val { font-size: 13px; font-weight: 700; color: #1a1a2e; width: 64px; text-align: right; flex-shrink: 0; }
+
+    /* TOOLTIP */
+    .tooltip-overlay { position: fixed; z-index: 1000; pointer-events: none; }
+    .tooltip-box { background: white; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); padding: 16px; width: 280px; }
+    .tt-header { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+    .tt-img { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; border: 1px solid #f0f0f0; flex-shrink: 0; }
+    .tt-img-ph { width: 52px; height: 52px; border-radius: 10px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+    .tt-name { font-size: 13px; font-weight: 600; color: #1a1a2e; line-height: 1.4; }
+    .tt-cat { font-size: 11px; color: #9ca3af; margin-top: 3px; }
+    .tt-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .tt-stat { background: #f9fafb; border-radius: 8px; padding: 8px 10px; }
+    .tt-stat-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.3px; }
+    .tt-stat-val { font-size: 15px; font-weight: 700; color: #1a1a2e; margin-top: 2px; }
+    .tt-chart-label { font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; }
+    .tt-chart svg { width: 100%; display: block; }
+
+    /* EMPTY STATE */
+    .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; color: #9ca3af; gap: 8px; }
+    .empty-icon { font-size: 40px; }
+
+    /* LOADING */
+    .loading { display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; gap: 16px; color: #6b7280; }
+    .spinner { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 900px) {
+      .main { flex-direction: column; }
+      .sidebar { width: 100%; }
+      .kpi-section { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="loading" v-if="!loaded">
+    <div class="spinner"></div>
+    <span>Загрузка данных...</span>
+  </div>
+
+  <div class="app" v-if="loaded">
+    <!-- HEADER -->
+    <div class="header">
+      <div class="header-icon">🛒</div>
+      <div>
+        <h1>Мои заказы в Яндекс Лавке</h1>
+        <p>Аналитика покупок {{ dataRange }}</p>
+      </div>
+      <div class="header-right">
+        Всего заказов: <strong>{{ totalOrders }}</strong><br>
+        Период: {{ dataRange }}
+      </div>
+    </div>
+
+    <!-- KPI SECTION -->
+    <div class="kpi-section">
+      <div class="kpi-card" style="--accent: #6366f1">
+        <div class="kpi-label">Заказов в месяц</div>
+        <div class="kpi-value">{{ lastMonth.orders }}<span class="kpi-unit">шт</span></div>
+        <div class="kpi-trend">
+          <span :class="ordersGrowth >= 0 ? 'kpi-trend-up' : 'kpi-trend-down'">
+            {{ ordersGrowth >= 0 ? '▲' : '▼' }} {{ Math.abs(ordersGrowth) }}
+          </span>
+          <span class="kpi-trend-val">vs пред. месяц</span>
+        </div>
+        <div class="sparkline-container" ref="sparkOrders"></div>
+      </div>
+
+      <div class="kpi-card" style="--accent: #10b981">
+        <div class="kpi-label">Сумма трат</div>
+        <div class="kpi-value">{{ formatNum(lastMonth.spend) }}<span class="kpi-unit">₽</span></div>
+        <div class="kpi-trend">
+          <span :class="spendGrowth >= 0 ? 'kpi-trend-up' : 'kpi-trend-down'">
+            {{ spendGrowth >= 0 ? '▲' : '▼' }} {{ Math.abs(spendGrowth) }}%
+          </span>
+          <span class="kpi-trend-val">vs пред. месяц</span>
+        </div>
+        <div class="sparkline-container" ref="sparkSpend"></div>
+      </div>
+
+      <div class="kpi-card" style="--accent: #f59e0b">
+        <div class="kpi-label">Средняя скидка</div>
+        <div class="kpi-value">{{ lastMonth.avg_discount.toFixed(1) }}<span class="kpi-unit">%</span></div>
+        <div class="kpi-trend">
+          <span :class="discountGrowth >= 0 ? 'kpi-trend-up' : 'kpi-trend-down'">
+            {{ discountGrowth >= 0 ? '▲' : '▼' }} {{ Math.abs(discountGrowth).toFixed(1) }}pp
+          </span>
+          <span class="kpi-trend-val">vs пред. месяц</span>
+        </div>
+        <div class="sparkline-container" ref="sparkDiscount"></div>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+      <!-- SIDEBAR -->
+      <div class="sidebar">
+        <!-- Category filter -->
+        <div class="panel">
+          <div class="panel-title">Категории</div>
+          <button class="cat-btn" :class="{ active: selectedCategory === 'Все' }" @click="selectedCategory = 'Все'"
+            style="--cat-color: #6366f1">
+            <span class="cat-dot" style="--dot-color: #6366f1"></span>
+            <span class="cat-name">Все категории</span>
+            <span class="cat-count">{{ data.categories.reduce((s, c) => s + c.orders, 0) }}</span>
+          </button>
+          <button
+            v-for="cat in data.categories"
+            :key="cat.name"
+            class="cat-btn"
+            :class="{ active: selectedCategory === cat.name }"
+            :style="{ '--cat-color': catColor(cat.name), '--dot-color': catColor(cat.name) }"
+            @click="selectedCategory = cat.name"
+          >
+            <span class="cat-dot"></span>
+            <span class="cat-name">{{ cat.name }}</span>
+            <span class="cat-count">{{ cat.orders }}</span>
+          </button>
+        </div>
+
+        <!-- Category stats -->
+        <div class="panel">
+          <div class="panel-title">Статистика категорий</div>
+          <table class="cat-table">
+            <thead>
+              <tr>
+                <th>Категория</th>
+                <th style="text-align:right">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="cat in data.categories"
+                :key="cat.name"
+                :class="{ 'active-row': selectedCategory === cat.name }"
+                @click="selectedCategory = cat.name"
+                style="cursor:pointer"
+              >
+                <td>
+                  <span class="cat-dot-sm" :style="{ background: catColor(cat.name) }"></span>
+                  {{ cat.name }}
+                </td>
+                <td>{{ formatNum(cat.total) }} ₽</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- CONTENT -->
+      <div class="content">
+        <!-- Tabs -->
+        <div class="tabs">
+          <button class="tab-btn" :class="{ active: sortBy === 'qty' }" @click="setSortBy('qty')">
+            📦 По количеству
+          </button>
+          <button class="tab-btn" :class="{ active: sortBy === 'total' }" @click="setSortBy('total')">
+            💰 По сумме трат
+          </button>
+        </div>
+
+        <!-- Items chart -->
+        <div class="items-panel">
+          <div class="items-panel-header">
+            <div class="items-panel-title">
+              Топ позиций
+              <span style="font-weight:400; color:#9ca3af; font-size:13px; margin-left:8px">
+                {{ selectedCategory === 'Все' ? 'все категории' : selectedCategory }}
+              </span>
+            </div>
+            <div style="font-size:12px; color:#9ca3af">
+              {{ sortBy === 'qty' ? 'сортировка по кол-ву (шт)' : 'сортировка по сумме (₽)' }}
+            </div>
+          </div>
+
+          <div class="items-list" v-if="filteredItems.length">
+            <div
+              v-for="(item, i) in filteredItems"
+              :key="item.name"
+              class="item-row"
+              @mouseenter="showTooltip($event, item)"
+              @mouseleave="hideTooltip"
+              @mousemove="moveTooltip($event)"
+            >
+              <div class="item-rank">#{{ i + 1 }}</div>
+              <img
+                v-if="item.img"
+                class="item-img"
+                :src="'items/items/' + item.img"
+                :alt="item.name"
+                @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'"
+              />
+              <div class="item-img-placeholder" :style="{ display: item.img ? 'none' : 'flex' }">🛍️</div>
+              <div class="item-info">
+                <div class="item-name">{{ item.name }}</div>
+                <div class="item-cat">{{ item.category }}</div>
+              </div>
+              <div class="item-bar-wrap">
+                <div class="item-bar-bg">
+                  <div
+                    class="item-bar-fill"
+                    :style="{
+                      width: barWidth(item) + '%',
+                      background: catColor(item.category)
+                    }"
+                  ></div>
+                </div>
+                <div class="item-val">
+                  {{ sortBy === 'qty' ? item.qty + ' шт' : formatNum(item.total) + ' ₽' }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="empty" v-else>
+            <div class="empty-icon">🔍</div>
+            <div>Нет данных для выбранной категории</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOOLTIP -->
+    <div
+      class="tooltip-overlay"
+      v-if="tooltip"
+      :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }"
+    >
+      <div class="tooltip-box">
+        <div class="tt-header">
+          <img
+            v-if="tooltip.img"
+            class="tt-img"
+            :src="'items/items/' + tooltip.img"
+            :alt="tooltip.name"
+            @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'"
+          />
+          <div class="tt-img-ph" :style="{ display: tooltip.img ? 'none' : 'flex' }">🛍️</div>
+          <div>
+            <div class="tt-name">{{ tooltip.name }}</div>
+            <div class="tt-cat">{{ tooltip.category }}</div>
+          </div>
+        </div>
+        <div class="tt-stats">
+          <div class="tt-stat">
+            <div class="tt-stat-label">Куплено</div>
+            <div class="tt-stat-val">{{ tooltip.qty }} шт</div>
+          </div>
+          <div class="tt-stat">
+            <div class="tt-stat-label">Потрачено</div>
+            <div class="tt-stat-val">{{ formatNum(tooltip.total) }} ₽</div>
+          </div>
+        </div>
+        <div v-if="tooltip.price_history && tooltip.price_history.length > 1">
+          <div class="tt-chart-label">Динамика цены</div>
+          <div ref="ttChart" style="height:60px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
+
+const CAT_COLORS = {
+  'Готовая еда': '#ef4444',
+  'Напитки': '#06b6d4',
+  'Вода': '#3b82f6',
+  'Фрукты': '#22c55e',
+  'Сладости': '#a855f7',
+  'Овощи': '#84cc16',
+  'База': '#f97316',
+  'Аптека': '#14b8a6',
+  'Снеки': '#ec4899',
+  'Товары для дома': '#6b7280',
+  'Молочные': '#f59e0b',
+};
+const DEFAULT_COLOR = '#6366f1';
+
+createApp({
+  setup() {
+    const data = ref(null);
+    const loaded = ref(false);
+    const selectedCategory = ref('Все');
+    const sortBy = ref('qty');
+    const tooltip = ref(null);
+    const tooltipX = ref(0);
+    const tooltipY = ref(0);
+
+    const sparkOrders = ref(null);
+    const sparkSpend = ref(null);
+    const sparkDiscount = ref(null);
+    const ttChart = ref(null);
+
+    onMounted(async () => {
+      const resp = await fetch('./dashboard_data.json');
+      data.value = await resp.json();
+      loaded.value = true;
+      await nextTick();
+      drawSparklines();
+    });
+
+    // ---- Computed ----
+    const last24 = computed(() => {
+      if (!data.value) return [];
+      return data.value.monthly.slice(-24);
+    });
+
+    const lastMonth = computed(() => {
+      if (!data.value) return { orders: 0, spend: 0, avg_discount: 0 };
+      return data.value.monthly[data.value.monthly.length - 1];
+    });
+
+    const prevMonth = computed(() => {
+      if (!data.value || data.value.monthly.length < 2) return { orders: 0, spend: 0, avg_discount: 0 };
+      return data.value.monthly[data.value.monthly.length - 2];
+    });
+
+    const ordersGrowth = computed(() => lastMonth.value.orders - prevMonth.value.orders);
+    const spendGrowth = computed(() => {
+      if (!prevMonth.value.spend) return 0;
+      return Math.round((lastMonth.value.spend - prevMonth.value.spend) / prevMonth.value.spend * 100);
+    });
+    const discountGrowth = computed(() => lastMonth.value.avg_discount - prevMonth.value.avg_discount);
+
+    const totalOrders = computed(() => {
+      if (!data.value) return 0;
+      return data.value.monthly.reduce((s, m) => s + m.orders, 0);
+    });
+
+    const dataRange = computed(() => {
+      if (!data.value || !data.value.monthly.length) return '';
+      const first = data.value.monthly[0].month;
+      const last = data.value.monthly[data.value.monthly.length - 1].month;
+      const fmt = m => {
+        const [y, mo] = m.split('-');
+        const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+        return months[parseInt(mo) - 1] + ' ' + y;
+      };
+      return fmt(first) + ' — ' + fmt(last);
+    });
+
+    const filteredItems = computed(() => {
+      if (!data.value) return [];
+      let items = data.value.items.filter(i => i.img);
+      if (selectedCategory.value !== 'Все') {
+        items = items.filter(i => i.category === selectedCategory.value);
+      }
+      return [...items].sort((a, b) => b[sortBy.value] - a[sortBy.value]).slice(0, 15);
+    });
+
+    const maxBarVal = computed(() => {
+      if (!filteredItems.value.length) return 1;
+      return Math.max(...filteredItems.value.map(i => i[sortBy.value]));
+    });
+
+    // ---- Methods ----
+    function catColor(cat) {
+      return CAT_COLORS[cat] || DEFAULT_COLOR;
+    }
+
+    function formatNum(n) {
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'к';
+      return Math.round(n).toString();
+    }
+
+    function barWidth(item) {
+      return (item[sortBy.value] / maxBarVal.value) * 100;
+    }
+
+    function setSortBy(val) {
+      sortBy.value = val;
+    }
+
+    function showTooltip(e, item) {
+      tooltip.value = item;
+      moveTooltip(e);
+      nextTick(() => drawTooltipChart(item));
+    }
+
+    function hideTooltip() {
+      tooltip.value = null;
+    }
+
+    function moveTooltip(e) {
+      const W = 280, margin = 12;
+      let x = e.clientX + margin;
+      let y = e.clientY - 60;
+      if (x + W > window.innerWidth - 10) x = e.clientX - W - margin;
+      if (y < 10) y = 10;
+      tooltipX.value = x;
+      tooltipY.value = y;
+    }
+
+    function drawTooltipChart(item) {
+      if (!ttChart.value || !item.price_history || item.price_history.length < 2) return;
+      const el = ttChart.value;
+      d3.select(el).selectAll('*').remove();
+
+      const W = 248, H = 56, pad = { t: 4, r: 4, b: 16, l: 30 };
+      const svg = d3.select(el).append('svg')
+        .attr('width', W).attr('height', H)
+        .attr('viewBox', `0 0 ${W} ${H}`);
+
+      const history = item.price_history;
+      const x = d3.scalePoint()
+        .domain(history.map(d => d.month))
+        .range([pad.l, W - pad.r]);
+      const prices = history.map(d => d.price);
+      const y = d3.scaleLinear()
+        .domain([Math.min(...prices) * 0.9, Math.max(...prices) * 1.1])
+        .range([H - pad.b, pad.t]);
+
+      const color = catColor(item.category);
+
+      // Area
+      const area = d3.area()
+        .x(d => x(d.month))
+        .y0(H - pad.b)
+        .y1(d => y(d.price))
+        .curve(d3.curveMonotoneX);
+
+      svg.append('path').datum(history)
+        .attr('fill', color).attr('opacity', 0.1)
+        .attr('d', area);
+
+      // Line
+      const line = d3.line()
+        .x(d => x(d.month))
+        .y(d => y(d.price))
+        .curve(d3.curveMonotoneX);
+
+      svg.append('path').datum(history)
+        .attr('fill', 'none').attr('stroke', color)
+        .attr('stroke-width', 2).attr('d', line);
+
+      // Dots (only first, last)
+      [history[0], history[history.length - 1]].forEach(d => {
+        svg.append('circle')
+          .attr('cx', x(d.month)).attr('cy', y(d.price))
+          .attr('r', 3).attr('fill', color);
+      });
+
+      // Y axis (min / max labels)
+      const minP = Math.min(...prices), maxP = Math.max(...prices);
+      svg.append('text').attr('x', 0).attr('y', y(maxP) + 4).attr('font-size', 9).attr('fill', '#9ca3af')
+        .text(Math.round(maxP) + '₽');
+      svg.append('text').attr('x', 0).attr('y', y(minP) + 4).attr('font-size', 9).attr('fill', '#9ca3af')
+        .text(Math.round(minP) + '₽');
+
+      // X axis: first and last month label
+      const fmtM = m => { const [y, mo] = m.split('-'); const ms = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']; return ms[parseInt(mo)-1]+' '+y.slice(2); };
+      svg.append('text').attr('x', x(history[0].month)).attr('y', H - 2).attr('font-size', 8).attr('fill', '#9ca3af').attr('text-anchor', 'middle').text(fmtM(history[0].month));
+      svg.append('text').attr('x', x(history[history.length - 1].month)).attr('y', H - 2).attr('font-size', 8).attr('fill', '#9ca3af').attr('text-anchor', 'middle').text(fmtM(history[history.length - 1].month));
+    }
+
+    function drawSparklines() {
+      if (!last24.value.length) return;
+      drawSparkline(sparkOrders.value, last24.value.map(m => m.orders), '#6366f1');
+      drawSparkline(sparkSpend.value, last24.value.map(m => m.spend), '#10b981');
+      drawSparkline(sparkDiscount.value, last24.value.map(m => m.avg_discount), '#f59e0b');
+    }
+
+    function drawSparkline(el, values, color) {
+      if (!el) return;
+      d3.select(el).selectAll('*').remove();
+      const W = el.clientWidth || 300, H = 48;
+      const svg = d3.select(el).append('svg')
+        .attr('width', '100%').attr('height', H)
+        .attr('viewBox', `0 0 ${W} ${H}`);
+
+      const x = d3.scaleLinear().domain([0, values.length - 1]).range([2, W - 2]);
+      const y = d3.scaleLinear().domain([0, Math.max(...values) * 1.1 || 1]).range([H - 2, 2]);
+
+      const area = d3.area()
+        .x((d, i) => x(i)).y0(H - 2).y1(d => y(d))
+        .curve(d3.curveMonotoneX);
+
+      svg.append('path').datum(values)
+        .attr('fill', color).attr('opacity', 0.12)
+        .attr('d', area);
+
+      const line = d3.line()
+        .x((d, i) => x(i)).y(d => y(d))
+        .curve(d3.curveMonotoneX);
+
+      svg.append('path').datum(values)
+        .attr('fill', 'none').attr('stroke', color)
+        .attr('stroke-width', 2).attr('d', line);
+
+      // Highlight last point
+      svg.append('circle')
+        .attr('cx', x(values.length - 1)).attr('cy', y(values[values.length - 1]))
+        .attr('r', 3).attr('fill', color);
+    }
+
+    watch(loaded, async (v) => {
+      if (v) { await nextTick(); drawSparklines(); }
+    });
+
+    return {
+      data, loaded, selectedCategory, sortBy,
+      tooltip, tooltipX, tooltipY,
+      sparkOrders, sparkSpend, sparkDiscount, ttChart,
+      last24, lastMonth, prevMonth,
+      ordersGrowth, spendGrowth, discountGrowth,
+      totalOrders, dataRange,
+      filteredItems, maxBarVal,
+      catColor, formatNum, barWidth, setSortBy,
+      showTooltip, hideTooltip, moveTooltip,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
